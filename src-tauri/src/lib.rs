@@ -6,7 +6,6 @@ use sqlite::ffi::sqlite3;
 use tauri::utils::config::CapabilityEntry;
 mod config;
 mod error;
-use crate::error::{Error, ErrorType};
 use crate::config::load_config;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/

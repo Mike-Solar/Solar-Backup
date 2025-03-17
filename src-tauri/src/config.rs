@@ -1,9 +1,15 @@
 
 use std::error::Error;
-
-use tauri::{utils::config, State};
-
+use std::fs::File;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+use remotefs::RemoteFs;
+use remotefs_smb::{SmbCredentials, SmbFs, SmbOptions};
+use serde::{Deserialize, Serialize};
+use tauri::{utils::config};
+use sqlite::State;
 use crate::error::NotInitedBackupError;
+
 #[derive(Serialize, Deserialize)]
 struct LocalConfig{
     is_inited:bool,
@@ -72,25 +78,28 @@ pub fn load_config() -> Result<Config, dyn Error>{
         Ok(c)=>c,
         Err(E)=>LocalConfig::new()
     };
-    let config:Config=Config::new();
+    let mut config:Config=Config::new();
     if local_config.is_inited==true{
         if local_config.backup_place_type == "smb".to_string() {
-            let client=match connect_smb(local_config.backup_place, 
-                local_config.backup_place_dir, local_config.username, local_config.password){
+            let mut client=match connect_smb(local_config.backup_place,
+                                             local_config.backup_place_dir, local_config.username, local_config.password){
                     Ok(c)=>c,
                     Err(e)=>return Err(E)
                 };
-            let path=std::env::temp_dir();
+            let mut path:PathBuf=std::env::temp_dir();
             path.push("solar-backup");
             path.push("database.db");
-            let file: Box<File>=Box::new(match File::create(path) {
+            let file: Box<File>=Box::new(match File::create(&path) {
                 Ok(f)=>f,
                 Err(E)=>return Err(E)
             });
-            let remote_path=path::new("database.db");
-            client.open_file(remote_path, file);
-            drop(file);
-            if let Err(e) = get_config_from_sqlite(path, &mut config) {
+            let remote_path=Path::new("database.db");
+            match client.open_file(remote_path, file){
+                Ok(ok)=>(),
+                Err(e)=>return Err(e)
+            };
+            let path_new=Box::new(path.as_path());
+            if let Err(e) = get_config_from_sqlite(path_new, &mut config) {
                 return Err(e)
              };
         }
@@ -98,9 +107,9 @@ pub fn load_config() -> Result<Config, dyn Error>{
             panic!("Unsupported");
         }
         else if local_config.backup_place_type == "local".to_string(){
-            let path=path::new(local_config.backup_place);
-            if let Err(e) = get_config_from_sqlite(path, &mut config) {
-               return Err(e)
+            let path_new=Box::new(path.as_path());
+            if let Err(e) = get_config_from_sqlite(path_new, &mut config) {
+                return Err(e)
             };
         }
     }
@@ -138,16 +147,16 @@ fn connect_smb(backup_place:String, backup_place_dir:String, username:String, pa
                 .one_share_per_server(true),
         ){
             Ok(c)=>c,
-            Err(E)=>return E
+            Err(E)=>return Err(E)
         };
     match client.connect() {
         Ok(c)=>c,
-        Err(E)=>return E
+        Err(E)=>return Err(E)
     }
     return Ok(client);
 }
 //从SQLite读取配置
-fn get_config_from_sqlite(path:Path, config:&mut config)->Result<_, dyn Error>{
+fn get_config_from_sqlite(path: Box<&Path>, config:&mut config) ->Result<_, dyn Error>{
     let connection = sqlite::open(path).unwrap();
     let query="select * from configs";
     let mut statement=connection.prepare(query);
@@ -156,22 +165,22 @@ fn get_config_from_sqlite(path:Path, config:&mut config)->Result<_, dyn Error>{
             if(res==State::Row){
                 config.save_how_often_week=match statement.read::<String, _>("save_how_often_week") {
                     Ok(res_str)=>res_str,
-                    Err(e)=>return Err(E)
+                    Err(e)=>return Err(e)
                 };
                 config.save_how_often_month=match statement.read::<String, _>("save_how_often_month"){
                     Ok(res_str)=>res_str,
-                    Err(e)=>return Err(E)
+                    Err(e)=>return Err(e)
                 };
                 config.save_how_often_year=match statement.read::<String, _>("save_how_often_year"){
                     Ok(res_str)=>res_str,
-                    Err(e)=>return Err(E)
+                    Err(e)=>return Err(e)
                 };
                 config.save_how_often_far=match statement.read::<String, _>("save_how_often_far"){
                     Ok(res_str)=>res_str,
-                    Err(e)=>return Err(E)
+                    Err(e)=>return Err(e)
                 };
             }else if(res==State::Done){
-                return Err(NotInitedBackupError);
+                return Err(NotInitedBackupError::new());
             }
         },
         Err(e)=>{
