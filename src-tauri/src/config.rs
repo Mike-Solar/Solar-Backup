@@ -3,12 +3,14 @@ use std::error::Error;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::ptr::read;
 use remotefs::RemoteFs;
 use remotefs_smb::{SmbCredentials, SmbFs, SmbOptions};
 use serde::{Deserialize, Serialize};
-use tauri::{utils::config};
+use tauri::{command,utils::config};
 use sqlite::State;
-use crate::error::NotInitedBackupError;
+use crate::error::{NotInitedBackupError, ErrorType, ErrorResult};
+use tauri::{AppHandle, Emitter};
 
 #[derive(Serialize, Deserialize)]
 struct LocalConfig{
@@ -59,7 +61,7 @@ impl Config {
 }
 //加载配置
 #[tauri::command]
-pub fn load_config() -> Result<Config, dyn Error>{
+pub fn load_config() -> Result<Config, ErrorResult>{
     let path:&Path=Path::new("./config.json");
     let mut file:File=match File::open(path){
         Ok(f)=>f,
@@ -84,23 +86,23 @@ pub fn load_config() -> Result<Config, dyn Error>{
             let mut client=match connect_smb(local_config.backup_place,
                                              local_config.backup_place_dir, local_config.username, local_config.password){
                     Ok(c)=>c,
-                    Err(e)=>return Err(E)
+                    Err(e)=>return Err(e)
                 };
             let mut path:PathBuf=std::env::temp_dir();
             path.push("solar-backup");
             path.push("database.db");
             let file: Box<File>=Box::new(match File::create(&path) {
                 Ok(f)=>f,
-                Err(E)=>return Err(E)
+                Err(E)=>return Err(ErrorResult::new(&E, ErrorType::LoadConfigError))
             });
             let remote_path=Path::new("database.db");
             match client.open_file(remote_path, file){
                 Ok(ok)=>(),
-                Err(e)=>return Err(e)
+                Err(e)=>return Err(ErrorResult::new(&e, ErrorType::LoadConfigError))
             };
             let path_new=Box::new(path.as_path());
             if let Err(e) = get_config_from_sqlite(path_new, &mut config) {
-                return Err(e)
+                return Err(ErrorResult::new(&e, ErrorType::UnInitedBackup));
              };
         }
         else if local_config.backup_place_type == "alipan".to_string(){
@@ -109,7 +111,7 @@ pub fn load_config() -> Result<Config, dyn Error>{
         else if local_config.backup_place_type == "local".to_string(){
             let path_new=Box::new(path.as_path());
             if let Err(e) = get_config_from_sqlite(path_new, &mut config) {
-                return Err(e)
+                return Err(ErrorResult::new(&e, ErrorType::UnInitedBackup))
             };
         }
     }
@@ -156,7 +158,7 @@ fn connect_smb(backup_place:String, backup_place_dir:String, username:String, pa
     return Ok(client);
 }
 //从SQLite读取配置
-fn get_config_from_sqlite(path: Box<&Path>, config:&mut config) ->Result<_, dyn Error>{
+fn get_config_from_sqlite(path: Box<&Path>, config:&mut config) ->Result<(), dyn Error>{
     let connection = sqlite::open(path).unwrap();
     let query="select * from configs";
     let mut statement=connection.prepare(query);
