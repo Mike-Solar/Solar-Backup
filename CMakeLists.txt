@@ -7,17 +7,18 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 set(CMAKE_PREFIX_PATH "/opt/Qt/6.8.2/gcc_64")
-
 find_package(Qt6 COMPONENTS
   Core
   Gui
-  Widgets
+  Widgets QuickWidgets Qml
   REQUIRED)
 
-add_executable(Solar_Backup main.cpp)
+add_executable(Solar_Backup main.cpp
+        resources.qrc
+)
 target_link_libraries(Solar_Backup
   Qt::Core
   Qt::Gui
-  Qt::Widgets
+  Qt::Widgets Qt::QuickWidgets Qt::Qml
 )
 

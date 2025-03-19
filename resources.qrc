@@ -1,0 +1,10 @@
+<!DOCTYPE RCC><RCC version="1.0">
+    <qresource>
+        <file>view/mainpage.qml</file>
+        <file>view/Button.qml</file>
+        <file>assets/backup.svg</file>
+        <file>assets/manage.svg</file>
+        <file>assets/plan.svg</file>
+        <file>assets/recovery.svg</file>
+    </qresource>
+</RCC>
